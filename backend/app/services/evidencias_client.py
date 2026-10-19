@@ -198,7 +198,7 @@ def _conectar_practicas(url: str):
 
     url = url.replace("postgresql+psycopg://", "postgresql://", 1)
     return psycopg.connect(url, autocommit=True, row_factory=dict_row, connect_timeout=10,
-                           options="-c default_transaction_read_only=on -c statement_timeout=15000")
+                           options="-c default_transaction_read_only=on")
 
 
 class PracticeDbEvidenciasClient:

@@ -193,6 +193,13 @@ class GenerarIn(BaseModel):
     def _unicos(cls, v: list[str]) -> list[str]:
         return list(dict.fromkeys(v))
 
+    @model_validator(mode="after")
+    def _limite_evidencias(self):
+        evs = [f for f in self.fuentes if f.tipo in ("EVIDENCIA", "ARCHIVO_EVIDENCIA")]
+        if len(evs) > 3:
+            raise ValueError("Puedes seleccionar máximo 3 evidencias como contexto para no sobrecargar la IA.")
+        return self
+
 
 class GeneracionOut(GeneracionResumen):
     advertencias: list[str] = []
