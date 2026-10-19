@@ -1,0 +1,40 @@
+# Levanta PostgreSQL (con el esquema y datos de ejemplo) + el backend.
+#   docker compose up --build
+# API: http://localhost:8000/docs
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: spp_evaluacion
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports: ["5432:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # se ejecutan SOLO la primera vez que se crea el volumen
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./db/seed.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d spp_evaluacion"]
+      interval: 5s
+      retries: 10
+
+  api:
+    build: ./backend
+    depends_on:
+      db: { condition: service_healthy }
+    env_file:
+      - path: ./backend/.env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/spp_evaluacion
+      CORS_ORIGINS: "*"
+      # Acoplado al monolito (ver README, «Acoplar al monolito»): descomenta y completa
+      # AUTH_MODE: jwt
+      # JWT_SECRET: <igual a EVALUATION_SERVICE_SECRET del monolito>
+      # EVIDENCIAS_MODE: practice_db
+      # PRACTICE_DATABASE_URL: postgresql://usuario_lectura:clave@host/postgres_1
+    ports: ["8000:8000"]
+
+volumes:
+  pgdata:
