@@ -124,12 +124,26 @@ Con `EVIDENCIAS_MODE=stub` (por defecto) usa datos de ejemplo. Con `practice_db`
 | Tutor | `GET /tutor/evidencias?id_practica=` · `POST /tutor/evaluaciones/{id}/generar` |
 | Tutor | `GET /tutor/evaluaciones/{id}/intentos` · `GET /tutor/intentos/{id}` · `POST /tutor/respuestas/{id}/calificar · retro` |
 | Estudiante | `GET /estudiante/evaluaciones` · `POST …/evaluaciones/{id}/intentos` · `GET …/intentos/{id}` · `PUT …/intentos/{id}/respuestas/{id_pregunta}` (autoguardado) · `POST …/intentos/{id}/enviar` |
+| Director | `GET /director/resumen` · `GET /director/evaluaciones` (filtros `estado`, `id_tutor`, `id_practica`, `q`, `solo_alertas`, `limite`, `desplazamiento`) · `GET /director/evaluaciones/{id}` — **solo lectura** |
 | — | `GET /health` |
 
 Reglas: opción múltiple y verdadero/falso se califican solas; las abiertas quedan «por calificar»
 hasta que el tutor ponga la nota (el intento pasa a CALIFICADO). Nota = suma obtenida / suma de valores × nota máxima
 (5.0 por defecto); la nota final de la evaluación es la mejor de sus intentos. Con intentos presentados las preguntas ya no se pueden modificar.
 Al cerrar o vencer la fecha límite, los intentos en curso se envían con lo guardado.
+
+## Panel del director (solo lectura)
+
+El director solo consulta. `routers/director.py` tiene únicamente `GET` y exige el rol `DIRECTOR`; con cualquier otro rol responde 403.
+
+* `GET /director/resumen`: totales, estado de evaluaciones e intentos, notas finales (mejor intento calificado, en % de la nota máxima),
+  aprobación (60 % = 3.0 de 5.0), uso y aceptación de la IA, actividad de los últimos 6 meses, tabla por tutor y alertas.
+* `GET /director/evaluaciones`: lista filtrable y paginada. `GET /director/evaluaciones/{id}`: acierto por pregunta, intentos y generaciones de IA.
+* **No devuelve** lo que escribieron los estudiantes, los comentarios del tutor ni el prompt enviado a la IA: solo cifras y notas.
+* Las cuentas están en `app/services/estadisticas.py` (funciones puras, sin base de datos) con sus pruebas en `tests/test_estadisticas.py`.
+  Los umbrales de las alertas (`DIAS_REVISION_ATRASADA`, `DIAS_BORRADOR_ANTIGUO`, `DIAS_SIN_INTENTOS`, `UMBRAL_APROBACION`) están al inicio de ese archivo.
+* El servicio solo conoce documentos e ids: los nombres de personas y prácticas los agrega el monolito (`directorio`).
+* Carga todas las evaluaciones con sus preguntas e intentos en memoria para calcular; está pensado para cientos de evaluaciones, no para millones.
 
 ## Cambios respecto a tu diagrama ER
 
@@ -142,7 +156,7 @@ referencias lógicas `VARCHAR(30)` sin FK (igual que `idPractica` y `numDocument
 ## Autenticación
 
 Por defecto `AUTH_MODE=dev`: el backend confía en los headers `X-User-Id` y `X-User-Role` (**solo desarrollo**). En producción usa
-`AUTH_MODE=jwt` + `JWT_SECRET`; el token debe traer `sub` (documento del usuario, texto) y `rol` (`TUTOR` | `ESTUDIANTE`). Ajusta `security.py` si tu
+`AUTH_MODE=jwt` + `JWT_SECRET`; el token debe traer `sub` (documento del usuario, texto) y `rol` (`TUTOR` | `ESTUDIANTE` | `DIRECTOR`). Ajusta `security.py` si tu
 servicio de usuarios emite otros claims. Además, el backend **no verifica con el servicio de prácticas** que el tutor sea el de esa práctica:
 solo que sea el creador de la evaluación.
 
@@ -157,6 +171,8 @@ Probado de verdad: `schema.sql` y `seed.sql` en PostgreSQL 16 (con sus restricci
 validación y calificación; y la interfaz completa en navegador (tutor + estudiante, modo sin backend, cliente real contra un servidor
 simulado, escritorio y celular, tema oscuro). **Sin ejecutar** en el entorno donde se escribió (no había acceso a PyPI): el arranque de
 FastAPI/SQLAlchemy y `pytest`. Si algo falla al primer `pytest` o `uvicorn`, es lo primero que hay que mirar.
+
+Panel del director: las cuentas (`estadisticas.py`) pasan sus 12 pruebas y sus respuestas encajan en los esquemas pydantic; la pantalla se probó en navegador (claro, oscuro, celular, modo sin backend) contra un servidor que usa ese código real detrás del gateway real. **Sin ejecutar**: las consultas SQLAlchemy de `routers/director.py` y `tests/test_director_api.py` (necesitan FastAPI/SQLAlchemy).
 
 Para el acople con el monolito sí se probó: el lector de evidencias (`practice_db`) contra PostgreSQL con el esquema real de prácticas (20 comprobaciones: aislamiento entre prácticas, dominios de descarga, tamaño máximo), el token firmado por Node contra una verificación HS256 independiente, y la puerta de enlace + pantallas en navegador con la misma política CSP del monolito. **Sin ejecutar**: el monolito completo (`npm install` no funcionó en el entorno) y el servicio Python real conectado a él.
 

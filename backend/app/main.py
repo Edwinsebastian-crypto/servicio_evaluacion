@@ -5,7 +5,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
-from .routers import estudiante, meta, tutor_evaluaciones, tutor_generacion, tutor_preguntas, tutor_resultados
+from .routers import (
+    director, estudiante, meta, tutor_evaluaciones, tutor_generacion, tutor_preguntas, tutor_resultados,
+)
 
 settings = get_settings()
 
@@ -36,5 +38,5 @@ app.add_middleware(
 
 API = "/api/v1"
 for r in (meta.router, tutor_evaluaciones.router, tutor_preguntas.router, tutor_generacion.router,
-          tutor_resultados.router, estudiante.router):
+          tutor_resultados.router, estudiante.router, director.router):
     app.include_router(r, prefix=API)

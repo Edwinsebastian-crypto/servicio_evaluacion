@@ -207,17 +207,10 @@ class OpenAICompatProvider:
             "tools": [{"type": "function", "function": funcion}],
             "tool_choice": {"type": "function", "function": {"name": funcion["name"]}},
         }
-        intentos = 3
-        for intento in range(intentos):
+        r = self._post(body)
+        if r.status_code == 400 and "tool_choice" in r.text.lower():   # algunos proveedores no aceptan forzar la función
+            body.pop("tool_choice")
             r = self._post(body)
-            if r.status_code == 400 and "tool_choice" in r.text.lower():   # algunos proveedores no aceptan forzar la función
-                body.pop("tool_choice", None)
-                r = self._post(body)
-            if r.status_code in (500, 502, 503) and intento < intentos - 1:
-                import time
-                time.sleep(2 * (intento + 1))
-                continue
-            break
         if r.status_code in (401, 403):
             raise LLMError("La API key del proveedor de IA no es válida o no tiene permiso.")
         if r.status_code == 429:

@@ -1,9 +1,10 @@
 """Identidad del usuario que llama a la API.
 
-AUTH_MODE=dev  -> headers X-User-Id y X-User-Role (TUTOR | ESTUDIANTE). SOLO para desarrollo.
+AUTH_MODE=dev  -> headers X-User-Id y X-User-Role (TUTOR | ESTUDIANTE | DIRECTOR). SOLO para desarrollo.
 AUTH_MODE=jwt  -> "Authorization: Bearer <jwt>" firmado con JWT_SECRET. Claims: `sub` = documento
                   del usuario (el mismo `numDocumento` del monolito, texto) y `rol` (o `role`) =
-                  TUTOR | ESTUDIANTE (también se aceptan los roles del monolito `tutor` y `student`).
+                  TUTOR | ESTUDIANTE | DIRECTOR (también se aceptan los roles del monolito `tutor`, `student`
+                  y `director`).
 
 Si tu servicio de usuarios emite tokens con otros nombres de claims, ajusta `_desde_jwt`.
 """
@@ -15,7 +16,8 @@ from fastapi import Depends, Header, HTTPException, status
 
 from .config import Settings, get_settings
 
-ROLES = {"TUTOR": "TUTOR", "TUTOR_ACADEMICO": "TUTOR", "ESTUDIANTE": "ESTUDIANTE", "STUDENT": "ESTUDIANTE"}
+ROLES = {"TUTOR": "TUTOR", "TUTOR_ACADEMICO": "TUTOR", "ESTUDIANTE": "ESTUDIANTE", "STUDENT": "ESTUDIANTE",
+         "DIRECTOR": "DIRECTOR"}
 
 
 @dataclass(frozen=True)
@@ -74,4 +76,11 @@ def solo_tutor(u: Usuario = Depends(usuario_actual)) -> Usuario:
 def solo_estudiante(u: Usuario = Depends(usuario_actual)) -> Usuario:
     if u.rol != "ESTUDIANTE":
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Solo el estudiante puede hacer esto.")
+    return u
+
+
+def solo_director(u: Usuario = Depends(usuario_actual)) -> Usuario:
+    """El director solo consulta (routers/director.py: únicamente GET)."""
+    if u.rol != "DIRECTOR":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Solo el director puede hacer esto.")
     return u
