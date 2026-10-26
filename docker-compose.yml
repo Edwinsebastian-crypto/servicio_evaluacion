@@ -1,4 +1,4 @@
-# Levanta PostgreSQL (con el esquema y datos de ejemplo) + el backend.
+# Levanta PostgreSQL (con el esquema limpio) + el backend.
 #   docker compose up --build
 # API: http://localhost:8000/docs
 services:
@@ -13,7 +13,6 @@ services:
       - pgdata:/var/lib/postgresql/data
       # se ejecutan SOLO la primera vez que se crea el volumen
       - ./db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
-      - ./db/seed.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d spp_evaluacion"]
       interval: 5s

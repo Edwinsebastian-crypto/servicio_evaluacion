@@ -286,13 +286,16 @@ class MockProvider:
             distractores = [w for w in pool if kw and w.casefold() != kw.casefold()]
             rnd.shuffle(distractores)
 
+            vuelta = i // len(frases)
+
             if tipo == "OPCION_MULTIPLE" and kw:
                 falsos = (distractores + [w for w in _RELLENO if w.casefold() != kw.casefold()])[:3]
                 ops = [{"texto": kw, "es_correcta": True}] + [{"texto": w, "es_correcta": False} for w in falsos]
                 rnd.shuffle(ops)
+                prefijo = "Completa la idea del material" if vuelta == 0 else f"Identifica el término adecuado según el material (aspecto {vuelta + 1})"
                 salida.append({
                     "tipo": tipo, "dificultad": dif,
-                    "enunciado": "Completa la idea del material: «" + frase.replace(kw, "_____", 1) + "»",
+                    "enunciado": f"{prefijo}: «" + frase.replace(kw, "_____", 1) + "»",
                     "opciones": ops, "explicacion": f"El material dice: «{frase}»",
                 })
             elif tipo == "VERDADERO_FALSO" and kw:
@@ -307,9 +310,10 @@ class MockProvider:
                     "explicacion": f"El material dice: «{frase}»",
                 })
             else:  # ABIERTA (o sin palabra clave aprovechable)
+                prefijo = "Explica con tus palabras y da un ejemplo de tu práctica sobre esta idea" if vuelta == 0 else f"Analiza y describe la aplicación en tu práctica docente de esta idea (enfoque {vuelta + 1})"
                 salida.append({
                     "tipo": "ABIERTA", "dificultad": dif, "opciones": [],
-                    "enunciado": "Explica con tus palabras y da un ejemplo de tu práctica sobre esta idea: «" + frase + "»",
+                    "enunciado": f"{prefijo}: «" + frase + "»",
                     "respuesta_esperada": "Debe reflejar la idea central: " + frase,
                     "explicacion": "Se espera que relacione la idea con una experiencia concreta de la práctica.",
                 })

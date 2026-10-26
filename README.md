@@ -6,7 +6,7 @@ evidencias y archivos del estudiante (que viven en otro servicio). Backend en **
 
 ```
 servicio-evaluacion/
-├── db/schema.sql, seed.sql      Esquema PostgreSQL (fuente de verdad) + datos de ejemplo
+├── db/schema.sql                Esquema PostgreSQL (fuente de verdad)
 ├── backend/app/                 FastAPI: routers/, services/ (IA, extracción, calificación), models, schemas
 ├── backend/tests/               pytest (lógica + flujo completo de la API)
 ├── docker-compose.yml           PostgreSQL + API
@@ -25,7 +25,7 @@ docker compose up --build        # Postgres + API en http://localhost:8000  (doc
 ```
 **Sin Docker**
 ```bash
-createdb spp_evaluacion && psql spp_evaluacion -f db/schema.sql -f db/seed.sql
+createdb spp_evaluacion && psql spp_evaluacion -f db/schema.sql
 cd backend && python -m venv .venv && source .venv/bin/activate
 pip install -r requirements-dev.txt
 cp .env.example .env             # ajusta DATABASE_URL y, si quieres IA real, ANTHROPIC_API_KEY
@@ -167,7 +167,7 @@ antes de usar un proveedor externo. El contenido enviado queda guardado en `cont
 
 ## Estado de verificación
 
-Probado de verdad: `schema.sql` y `seed.sql` en PostgreSQL 16 (con sus restricciones); la lógica de extracción, generación,
+Probado de verdad: `schema.sql` en PostgreSQL 16 (con sus restricciones); la lógica de extracción, generación,
 validación y calificación; y la interfaz completa en navegador (tutor + estudiante, modo sin backend, cliente real contra un servidor
 simulado, escritorio y celular, tema oscuro). **Sin ejecutar** en el entorno donde se escribió (no había acceso a PyPI): el arranque de
 FastAPI/SQLAlchemy y `pytest`. Si algo falla al primer `pytest` o `uvicorn`, es lo primero que hay que mirar.
@@ -202,8 +202,7 @@ El navegador nunca habla con el servicio: no hace falta CORS ni exponerlo a Inte
 
 ### Pasos
 
-1. **Base nueva:** crea `spp_evaluacion` (en Neon: *New database*) y aplica el esquema: `psql "$URL" -f db/schema.sql`
-   (no cargues `seed.sql`, es de desarrollo).
+1. **Base nueva:** crea `spp_evaluacion` (en Neon: *New database*) y aplica el esquema: `psql "$URL" -f db/schema.sql`.
 2. **Secreto compartido:** `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"`.
 3. **Servicio** (`backend/.env`):
    ```

@@ -324,7 +324,7 @@ _STUB_TEXTOS = {
 
 
 class StubEvidenciasClient:
-    """Datos de ejemplo para desarrollo. Útil junto con db/seed.sql (práctica 10)."""
+    """Implementación stub para desarrollo local offline y pruebas automatizadas."""
 
     def listar_evidencias(self, id_practica: str) -> list[EvidenciaInfo]:
         return [
