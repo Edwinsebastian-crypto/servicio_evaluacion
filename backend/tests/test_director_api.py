@@ -74,3 +74,35 @@ def test_detalle_no_expone_respuestas_ni_prompt(client):
     assert "respuesta" not in q and "opciones" not in q          # solo cifras
     assert all("prompt_usado" not in g for g in d["generaciones"])
     assert client.get(f"{P}/director/evaluaciones/999999", headers=DIRECTOR).status_code == 404
+
+
+def test_director_preguntas_e_intentos_detalle(client):
+    ev = _evaluacion_presentada(client)
+    # 1. El director puede ver las preguntas con sus opciones (solo lectura)
+    r_preguntas = client.get(f"{P}/director/evaluaciones/{ev}/preguntas", headers=DIRECTOR)
+    assert r_preguntas.status_code == 200, r_preguntas.text
+    det = r_preguntas.json()
+    assert len(det["preguntas"]) == 1
+    p = det["preguntas"][0]
+    assert p["enunciado"] == "¿Cuál es correcta?"
+    assert len(p["opciones"]) == 2
+    assert any(o["es_correcta"] for o in p["opciones"])
+
+    # 2. El director puede listar los intentos de la evaluación
+    r_intentos = client.get(f"{P}/director/evaluaciones/{ev}/intentos", headers=DIRECTOR)
+    assert r_intentos.status_code == 200, r_intentos.text
+    intentos = r_intentos.json()
+    assert len(intentos) >= 1
+    it = intentos[0]
+    assert it["estado"] == "CALIFICADO"
+
+    # 3. El director puede ver el detalle del intento con las respuestas puestas por el estudiante
+    r_it_detalle = client.get(f"{P}/director/intentos/{it['id_intento']}", headers=DIRECTOR)
+    assert r_it_detalle.status_code == 200, r_it_detalle.text
+    it_det = r_it_detalle.json()
+    assert len(it_det["respuestas"]) == 1
+    resp = it_det["respuestas"][0]
+    assert resp["enunciado"] == "¿Cuál es correcta?"
+    assert resp["es_correcta"] is True
+    assert resp["nota_obtenida"] is not None
+

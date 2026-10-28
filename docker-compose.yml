@@ -26,13 +26,17 @@ services:
       - path: ./backend/.env
         required: false
     environment:
-      DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/spp_evaluacion
-      CORS_ORIGINS: "*"
-      # Acoplado al monolito (ver README, «Acoplar al monolito»): descomenta y completa
-      # AUTH_MODE: jwt
-      # JWT_SECRET: <igual a EVALUATION_SERVICE_SECRET del monolito>
-      # EVIDENCIAS_MODE: practice_db
-      # PRACTICE_DATABASE_URL: postgresql://usuario_lectura:clave@host/postgres_1
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://postgres:postgres@db:5432/spp_evaluacion}
+      CORS_ORIGINS: "${CORS_ORIGINS:-*}"
+      AUTH_MODE: "${AUTH_MODE:-jwt}"
+      JWT_SECRET: "${JWT_SECRET:-}"
+      EVIDENCIAS_MODE: "${EVIDENCIAS_MODE:-practice_db}"
+      PRACTICE_DATABASE_URL: "${PRACTICE_DATABASE_URL:-}"
+      ALLOWED_FILE_HOSTS: "${ALLOWED_FILE_HOSTS:-res.cloudinary.com}"
+      LLM_PROVIDER: "${LLM_PROVIDER:-openai_compat}"
+      LLM_BASE_URL: "${LLM_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai/}"
+      LLM_API_KEY: "${LLM_API_KEY:-}"
+      LLM_MODEL: "${LLM_MODEL:-gemini-3.8-flash}"
     ports: ["8000:8000"]
 
 volumes:

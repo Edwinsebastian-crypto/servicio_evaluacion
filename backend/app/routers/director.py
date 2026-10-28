@@ -10,9 +10,11 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from ..database import get_db
-from ..models import Evaluacion
+from ..models import Evaluacion, IntentoEvaluacion, Pregunta, Respuesta
+from ..schemas import EvaluacionDetalle, IntentoDetalleTutor, IntentoResumenTutor
 from ..schemas_director import DetalleDirector, ListaDirector, ResumenDirector
 from ..security import Usuario, solo_director
+from ..serializers import detalle as detalle_serializer, intento_detalle_tutor, intento_resumen_tutor
 from ..services import estadisticas as est
 
 router = APIRouter(prefix="/director", tags=["Director · Solo lectura"])
@@ -71,3 +73,54 @@ def detalle(id_evaluacion: int, db: Session = Depends(get_db), _: Usuario = Depe
         "preguntas": est.analisis_preguntas(ev), "intentos": est.intentos_de(ev, ahora),
         "generaciones": est.generaciones_de(ev),
     }
+
+
+@router.get("/evaluaciones/{id_evaluacion}/preguntas", response_model=EvaluacionDetalle)
+def detalle_preguntas(id_evaluacion: int, db: Session = Depends(get_db), _: Usuario = Depends(solo_director)):
+    """Consulta de solo lectura de todas las preguntas de la evaluación (con opciones y criterios)."""
+    ev = db.scalars(
+        select(Evaluacion)
+        .options(
+            selectinload(Evaluacion.preguntas).selectinload(Pregunta.opciones),
+            selectinload(Evaluacion.intentos),
+            selectinload(Evaluacion.generaciones),
+            selectinload(Evaluacion.contextos),
+        )
+        .where(Evaluacion.id_evaluacion == id_evaluacion)
+    ).first()
+    if ev is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "La evaluación no existe.")
+    return detalle_serializer(ev)
+
+
+@router.get("/evaluaciones/{id_evaluacion}/intentos", response_model=list[IntentoResumenTutor])
+def listar_intentos(id_evaluacion: int, db: Session = Depends(get_db), _: Usuario = Depends(solo_director)):
+    """Consulta de los intentos presentados o en curso para la evaluación."""
+    ev = db.scalars(
+        select(Evaluacion)
+        .options(
+            selectinload(Evaluacion.preguntas),
+            selectinload(Evaluacion.intentos).selectinload(IntentoEvaluacion.respuestas),
+        )
+        .where(Evaluacion.id_evaluacion == id_evaluacion)
+    ).first()
+    if ev is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "La evaluación no existe.")
+    return [intento_resumen_tutor(i) for i in ev.intentos]
+
+
+@router.get("/intentos/{id_intento}", response_model=IntentoDetalleTutor)
+def ver_intento(id_intento: int, db: Session = Depends(get_db), _: Usuario = Depends(solo_director)):
+    """Consulta de las respuestas que el estudiante colocó en un intento, notas y retroalimentación."""
+    i = db.scalars(
+        select(IntentoEvaluacion)
+        .options(
+            selectinload(IntentoEvaluacion.evaluacion).selectinload(Evaluacion.preguntas).selectinload(Pregunta.opciones),
+            selectinload(IntentoEvaluacion.respuestas).selectinload(Respuesta.retros),
+            selectinload(IntentoEvaluacion.respuestas).selectinload(Respuesta.pregunta),
+        )
+        .where(IntentoEvaluacion.id_intento == id_intento)
+    ).first()
+    if i is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "El intento no existe.")
+    return intento_detalle_tutor(i)
