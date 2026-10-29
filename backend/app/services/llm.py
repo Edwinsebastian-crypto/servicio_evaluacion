@@ -207,16 +207,32 @@ class OpenAICompatProvider:
             "tools": [{"type": "function", "function": funcion}],
             "tool_choice": {"type": "function", "function": {"name": funcion["name"]}},
         }
-        r = self._post(body)
-        if r.status_code == 400 and "tool_choice" in r.text.lower():   # algunos proveedores no aceptan forzar la función
-            body.pop("tool_choice")
+
+        # Modelos a intentar (permite fallback transparente si el modelo principal está sobrecargado con 503)
+        modelos_a_probar = [self.model]
+        if "gemini" in self.model.lower():
+            for alt in ("gemini-3.5-flash", "gemini-3.5-flash-lite"):
+                if alt not in modelos_a_probar:
+                    modelos_a_probar.append(alt)
+
+        r = None
+        for i, mod in enumerate(modelos_a_probar):
+            body["model"] = mod
             r = self._post(body)
-        if r.status_code in (401, 403):
-            raise LLMError("La API key del proveedor de IA no es válida o no tiene permiso.")
-        if r.status_code == 429:
-            raise LLMError("Se alcanzó el límite gratuito del proveedor de IA. Intenta de nuevo en un momento.")
-        if r.status_code >= 400:
-            raise LLMError(f"El proveedor de IA devolvió un error ({r.status_code}).")
+            if r.status_code == 400 and "tool_choice" in r.text.lower():   # algunos proveedores no aceptan forzar la función
+                body_sin_tool_choice = dict(body)
+                body_sin_tool_choice.pop("tool_choice", None)
+                r = self._post(body_sin_tool_choice)
+            if r.status_code in (401, 403):
+                raise LLMError("La API key del proveedor de IA no es válida o no tiene permiso.")
+            # Si hay error 503 (alta demanda) o 429 y aún hay modelos de respaldo, intentar con el siguiente
+            if r.status_code in (429, 503) and i < len(modelos_a_probar) - 1:
+                continue
+            if r.status_code == 429:
+                raise LLMError("Se alcanzó el límite de uso del proveedor de IA. Intenta de nuevo en un momento.")
+            if r.status_code >= 400:
+                raise LLMError(f"El proveedor de IA devolvió un error ({r.status_code}).")
+            break
 
         try:
             data = r.json()

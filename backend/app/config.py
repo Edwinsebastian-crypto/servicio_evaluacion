@@ -1,12 +1,19 @@
 """Configuración del servicio (variables de entorno / archivo .env)."""
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
+
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=(ENV_PATH, ".env"),
+        env_file_encoding="utf-8",
+        extra="ignore"
+    )
 
     # Base de datos
     database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/spp_evaluacion"
@@ -26,7 +33,7 @@ class Settings(BaseSettings):
     anthropic_model: str = "claude-sonnet-5-5"
     llm_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
     llm_api_key: str = ""
-    llm_model: str = "gemini-3.8-flash"
+    llm_model: str = "gemini-3.5-flash"
     llm_max_tokens: int = 8000
     max_context_chars: int = 60000
     max_file_mb: int = 15

@@ -197,8 +197,13 @@ def _conectar_practicas(url: str):
     from psycopg.rows import dict_row
 
     url = url.replace("postgresql+psycopg://", "postgresql://", 1)
-    return psycopg.connect(url, autocommit=True, row_factory=dict_row, connect_timeout=10,
-                           options="-c default_transaction_read_only=on -c statement_timeout=15000")
+    conn = psycopg.connect(url, autocommit=True, row_factory=dict_row, connect_timeout=10)
+    try:
+        conn.execute("SET default_transaction_read_only = on")
+        conn.execute("SET statement_timeout = 15000")
+    except Exception:
+        pass
+    return conn
 
 
 class PracticeDbEvidenciasClient:
