@@ -15,7 +15,7 @@ class Settings(BaseSettings):
         extra="ignore"
     )
 
-    # Base de datos
+    # Base de datos propia del servicio de evaluación (postgres_2)
     database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/spp_evaluacion"
     auto_create_tables: bool = False
 
@@ -38,12 +38,10 @@ class Settings(BaseSettings):
     max_context_chars: int = 60000
     max_file_mb: int = 15
 
-    # Servicio de evidencias
-    evidencias_mode: Literal["stub", "practice_db", "http"] = "practice_db"
-    evidencias_api_url: str = ""
+    # Comunicación con el monolito para evidencias/actividades de prácticas
+    evidencias_mode: Literal["stub", "http"] = "http"
+    evidencias_api_url: str = "http://127.0.0.1:3000/api/internal"
     evidencias_api_token: str = ""
-    practice_database_url: str = ""
-    allowed_file_hosts: str = "res.cloudinary.com"
 
     @property
     def cors_list(self) -> list[str]:

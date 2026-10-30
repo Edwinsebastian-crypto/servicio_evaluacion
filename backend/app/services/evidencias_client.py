@@ -1,23 +1,21 @@
-"""Acceso a las evidencias y actividades de las prácticas (viven FUERA de esta base).
+"""Acceso a las evidencias y actividades de las prácticas.
 
-Tres modos (EVIDENCIAS_MODE):
-  stub        datos de ejemplo, para desarrollo sin nada más.
-  practice_db lee, en SOLO LECTURA, la base de PRÁCTICAS del monolito (evidenciaactividad,
-              evidenciaarchivo, actividad, archivosactividad) y descarga los archivos desde su URL
-              (Cloudinary). Es el modo para acoplar al monolito SPP.
-  http        pide los datos a otro servicio por HTTP. Contrato (todas con
-              `Authorization: Bearer <EVIDENCIAS_API_TOKEN>`; incluye `id_practica` en cada evidencia
-              y actividad para que se pueda verificar que pertenecen a la práctica de la evaluación):
+Siguiendo la arquitectura de microservicios, el servicio de evaluación NUNCA
+consulta directamente la base de datos de prácticas (postgres_1) del monolito.
+Cada servicio gestiona exclusivamente su propia base de datos (postgres_2).
 
+Para acceder a evidencias, actividades y archivos de prácticas, el servicio
+consulta al monolito mediante HTTP interno autenticado:
   GET  {URL}/practicas/{id_practica}/evidencias
-       -> [ { "id_evidencia", "descripcion", "horas_realizadas", "id_actividad", "nombre_actividad",
-              "archivos": [ {"id_archivo", "nombre_archivo", "tipo_mime"} ] } ]
-  GET  {URL}/evidencias/{id_evidencia}                  -> un elemento como el anterior
-  GET  {URL}/evidencias/archivos/{id_archivo}           -> bytes del archivo (Content-Type real)
+  GET  {URL}/evidencias/{id_evidencia}
+  GET  {URL}/evidencias/archivos/{id_archivo}
   GET  {URL}/actividades/{id_actividad}
-       -> { "id_actividad", "nombre", "descripcion",
-            "archivos": [ {"id_archivo", "nombre_archivo", "tipo_mime"} ] }
-  GET  {URL}/actividades/archivos/{id_archivo}          -> bytes del archivo
+  GET  {URL}/actividades/archivos/{id_archivo}
+  GET  {URL}/verificar?tipo={tipo}&id={id}&id_practica={id_practica}
+
+Modos (EVIDENCIAS_MODE):
+  http  Modo producción / integración: consulta al monolito vía HTTP.
+  stub  Modo pruebas offline: datos simulados para pytest y desarrollo sin red.
 """
 from __future__ import annotations
 
@@ -77,7 +75,7 @@ class EvidenciasClient(Protocol):
 
 
 # ----------------------------------------------------------------------------
-#  Implementación HTTP real
+#  Implementación HTTP: consulta al monolito (SOFTWARE_SPP)
 # ----------------------------------------------------------------------------
 def _archivos(raw: list[dict] | None) -> list[ArchivoInfo]:
     return [
@@ -100,6 +98,8 @@ def _evidencia(raw: dict) -> EvidenciaInfo:
 
 
 class HttpEvidenciasClient:
+    """Cliente HTTP que consume los endpoints internos del monolito."""
+
     def __init__(self, base_url: str, token: str = "", max_bytes: int = 15 * 1024 * 1024):
         headers = {"Authorization": f"Bearer {token}"} if token else {}
         self._http = httpx.Client(base_url=base_url.rstrip("/"), headers=headers, timeout=30.0)
@@ -129,17 +129,13 @@ class HttpEvidenciasClient:
                              str(raw["id_practica"]) if raw.get("id_practica") is not None else None)
 
     def pertenece(self, tipo_fuente: str, id_ref: str, id_practica: str) -> bool:
-        """Solo se puede verificar con evidencias/actividades; para un archivo suelto no hay dato y se rechaza."""
+        """Verifica pertenencia consultando al monolito (/verificar?tipo=...&id=...&id_practica=...)."""
         try:
-            if tipo_fuente == "EVIDENCIA":
-                dueña = self.obtener_evidencia(id_ref).id_practica
-            elif tipo_fuente == "ACTIVIDAD":
-                dueña = self.obtener_actividad(id_ref).id_practica
-            else:
-                return False
+            r = self._get(f"/verificar?tipo={tipo_fuente}&id={id_ref}&id_practica={id_practica}")
+            data = r.json()
+            return bool(data.get("pertenece", False))
         except EvidenciasError:
             return False
-        return dueña is not None and dueña == str(id_practica)
 
     def descargar(self, tipo: str, id_archivo: str) -> ArchivoBytes:
         base = "/evidencias/archivos" if tipo == "EVIDENCIA" else "/actividades/archivos"
@@ -154,159 +150,7 @@ class HttpEvidenciasClient:
 
 
 # ----------------------------------------------------------------------------
-#  Lectura directa (solo lectura) de la base de PRÁCTICAS del monolito
-# ----------------------------------------------------------------------------
-# Nombres tal como los usa el monolito (ver src/repositories/evidence.repository.js).
-SQL_EVIDENCIAS_DE_PRACTICA = """
-    SELECT ev."idEvidencia" AS id_evidencia, ev.descripcion, ev."horasRealizadas" AS horas,
-           ev."idActividad" AS id_actividad, a.nombre AS nombre_actividad, a."idPractica" AS id_practica,
-           f."idArchivo" AS id_archivo, f."nombreArchivo" AS nombre_archivo, f."tipoMine" AS tipo_mime
-      FROM evidenciaactividad ev
-      JOIN actividad a ON a."idActividad" = ev."idActividad"
-      LEFT JOIN evidenciaarchivo f ON f."idEvidenciaAct" = ev."idEvidencia"
-     WHERE a."idPractica" = %s
-     ORDER BY ev."idEvidencia" DESC, f."idArchivo" """
-SQL_EVIDENCIA = SQL_EVIDENCIAS_DE_PRACTICA.replace('WHERE a."idPractica" = %s', 'WHERE ev."idEvidencia" = %s')
-SQL_ACTIVIDAD = """
-    SELECT a."idActividad" AS id_actividad, a.nombre, a.descripcion, a."idPractica" AS id_practica,
-           f."idArchivoAct" AS id_archivo, f."nombreArchivo" AS nombre_archivo, f."tipoMine" AS tipo_mime
-      FROM actividad a
-      LEFT JOIN archivosactividad f ON f."idActividad" = a."idActividad"
-     WHERE a."idActividad" = %s
-     ORDER BY f."idArchivoAct" """
-SQL_ARCHIVO_EVIDENCIA = """
-    SELECT f."rutaArchivo" AS url, f."nombreArchivo" AS nombre, f."tipoMine" AS mime, a."idPractica" AS id_practica
-      FROM evidenciaarchivo f
-      JOIN evidenciaactividad ev ON ev."idEvidencia" = f."idEvidenciaAct"
-      JOIN actividad a ON a."idActividad" = ev."idActividad"
-     WHERE f."idArchivo" = %s"""
-SQL_ARCHIVO_ACTIVIDAD = """
-    SELECT f."rutaArchivo" AS url, f."nombreArchivo" AS nombre, f."tipoMine" AS mime, a."idPractica" AS id_practica
-      FROM archivosactividad f
-      JOIN actividad a ON a."idActividad" = f."idActividad"
-     WHERE f."idArchivoAct" = %s"""
-SQL_PRACTICA_DE_EVIDENCIA = """
-    SELECT a."idPractica" AS id_practica FROM evidenciaactividad ev
-      JOIN actividad a ON a."idActividad" = ev."idActividad" WHERE ev."idEvidencia" = %s"""
-SQL_PRACTICA_DE_ACTIVIDAD = 'SELECT "idPractica" AS id_practica FROM actividad WHERE "idActividad" = %s'
-
-
-def _conectar_practicas(url: str):
-    """Conexión de SOLO LECTURA (la sesión rechaza cualquier INSERT/UPDATE/DELETE)."""
-    import psycopg
-    from psycopg.rows import dict_row
-
-    url = url.replace("postgresql+psycopg://", "postgresql://", 1)
-    conn = psycopg.connect(url, autocommit=True, row_factory=dict_row, connect_timeout=10)
-    try:
-        conn.execute("SET default_transaction_read_only = on")
-        conn.execute("SET statement_timeout = 15000")
-    except Exception:
-        pass
-    return conn
-
-
-class PracticeDbEvidenciasClient:
-    """Lee evidencias y actividades de la base de prácticas del monolito y baja los archivos de su URL.
-
-    Seguridad: los archivos solo se descargan por HTTPS desde los dominios de `allowed_hosts`
-    (Cloudinary por defecto), para que una URL manipulada en la base no sirva de puerta a la red interna.
-    Recomendado: usa un usuario de Postgres con SOLO permiso SELECT en esas cuatro tablas.
-    """
-
-    def __init__(self, database_url: str, allowed_hosts: list[str], max_bytes: int = 15 * 1024 * 1024,
-                 connect=None, http=None):
-        self._url = database_url
-        self._hosts = [h.lower() for h in allowed_hosts]
-        self._max_bytes = max_bytes
-        self._connect = connect or _conectar_practicas
-        self._http = http or httpx.Client(timeout=30.0, follow_redirects=False)
-
-    # -- base de datos ----------------------------------------------------
-    def _rows(self, sql: str, param: str) -> list[dict]:
-        try:
-            with self._connect(self._url) as conn:
-                return list(conn.execute(sql, (param,)).fetchall())
-        except Exception as e:  # noqa: BLE001 — cualquier fallo de conexión/consulta se informa igual
-            raise EvidenciasError(f"No se pudo leer la base de prácticas: {e.__class__.__name__}") from e
-
-    @staticmethod
-    def _agrupar(rows: list[dict]) -> list[EvidenciaInfo]:
-        por_id: dict[str, EvidenciaInfo] = {}
-        for r in rows:
-            e = por_id.get(r["id_evidencia"])
-            if e is None:
-                e = por_id[r["id_evidencia"]] = EvidenciaInfo(
-                    id_evidencia=r["id_evidencia"], descripcion=r["descripcion"],
-                    horas_realizadas=float(r["horas"]) if r["horas"] is not None else None,
-                    id_actividad=r["id_actividad"], nombre_actividad=r["nombre_actividad"],
-                    id_practica=r["id_practica"])
-            if r["id_archivo"]:
-                e.archivos.append(ArchivoInfo(r["id_archivo"], r["nombre_archivo"] or f"archivo-{r['id_archivo']}",
-                                              r["tipo_mime"]))
-        return list(por_id.values())
-
-    def listar_evidencias(self, id_practica: str) -> list[EvidenciaInfo]:
-        return self._agrupar(self._rows(SQL_EVIDENCIAS_DE_PRACTICA, str(id_practica)))
-
-    def obtener_evidencia(self, id_evidencia: str) -> EvidenciaInfo:
-        lista = self._agrupar(self._rows(SQL_EVIDENCIA, str(id_evidencia)))
-        if not lista:
-            raise EvidenciasError(f"No existe la evidencia {id_evidencia}.")
-        return lista[0]
-
-    def obtener_actividad(self, id_actividad: str) -> ActividadInfo:
-        rows = self._rows(SQL_ACTIVIDAD, str(id_actividad))
-        if not rows:
-            raise EvidenciasError(f"No existe la actividad {id_actividad}.")
-        a = ActividadInfo(rows[0]["id_actividad"], rows[0]["nombre"], rows[0]["descripcion"],
-                          id_practica=rows[0]["id_practica"])
-        a.archivos = [ArchivoInfo(r["id_archivo"], r["nombre_archivo"] or f"archivo-{r['id_archivo']}", r["tipo_mime"])
-                      for r in rows if r["id_archivo"]]
-        return a
-
-    def pertenece(self, tipo_fuente: str, id_ref: str, id_practica: str) -> bool:
-        sql, param = {
-            "EVIDENCIA": (SQL_PRACTICA_DE_EVIDENCIA, id_ref),
-            "ACTIVIDAD": (SQL_PRACTICA_DE_ACTIVIDAD, id_ref),
-            "ARCHIVO_EVIDENCIA": (SQL_ARCHIVO_EVIDENCIA, id_ref),
-            "ARCHIVO_ACTIVIDAD": (SQL_ARCHIVO_ACTIVIDAD, id_ref),
-        }.get(tipo_fuente, (None, None))
-        if sql is None:
-            return False
-        try:
-            rows = self._rows(sql, str(param))
-        except EvidenciasError:
-            return False
-        return bool(rows) and rows[0]["id_practica"] == str(id_practica)
-
-    # -- archivos ---------------------------------------------------------
-    def _url_permitida(self, url: str) -> bool:
-        from urllib.parse import urlparse
-
-        u = urlparse(url or "")
-        return u.scheme == "https" and (u.hostname or "").lower() in self._hosts
-
-    def descargar(self, tipo: str, id_archivo: str) -> ArchivoBytes:
-        rows = self._rows(SQL_ARCHIVO_EVIDENCIA if tipo == "EVIDENCIA" else SQL_ARCHIVO_ACTIVIDAD, str(id_archivo))
-        if not rows:
-            raise EvidenciasError(f"No existe el archivo {id_archivo}.")
-        f = rows[0]
-        if not self._url_permitida(f["url"]):
-            raise EvidenciasError(f"El archivo «{f['nombre']}» está en un dominio no permitido y se omitió.")
-        try:
-            r = self._http.get(f["url"])
-        except httpx.HTTPError as e:
-            raise EvidenciasError(f"No se pudo descargar «{f['nombre']}»: {e.__class__.__name__}") from e
-        if r.status_code >= 400:
-            raise EvidenciasError(f"No se pudo descargar «{f['nombre']}» (HTTP {r.status_code}).")
-        if len(r.content) > self._max_bytes:
-            raise EvidenciasError(f"«{f['nombre']}» supera el tamaño máximo permitido.")
-        return ArchivoBytes(r.content, f["mime"] or r.headers.get("content-type"), f["nombre"])
-
-
-# ----------------------------------------------------------------------------
-#  Implementación de ejemplo (desarrollo, sin el otro servicio)
+#  Implementación Stub (test double para tests unitarios automatizados)
 # ----------------------------------------------------------------------------
 _STUB_TEXTOS = {
     "1001": ("planeacion_clase.txt", (
@@ -329,7 +173,7 @@ _STUB_TEXTOS = {
 
 
 class StubEvidenciasClient:
-    """Implementación stub para desarrollo local offline y pruebas automatizadas."""
+    """Implementación stub exclusivamente para pruebas unitarias offline (pytest)."""
 
     def listar_evidencias(self, id_practica: str) -> list[EvidenciaInfo]:
         return [
@@ -340,7 +184,7 @@ class StubEvidenciasClient:
         ]
 
     def obtener_evidencia(self, id_evidencia: str) -> EvidenciaInfo:
-        for e in self.listar_evidencias(0):
+        for e in self.listar_evidencias("0"):
             if e.id_evidencia == str(id_evidencia):
                 return e
         raise EvidenciasError(f"No existe la evidencia {id_evidencia} (modo stub).")
@@ -350,7 +194,7 @@ class StubEvidenciasClient:
                              "Diseñar y ejecutar una clase de fracciones para grado quinto.", [])
 
     def pertenece(self, tipo_fuente: str, id_ref: str, id_practica: str) -> bool:
-        return True   # datos de ejemplo: no hay prácticas reales que separar
+        return True
 
     def descargar(self, tipo: str, id_archivo: str) -> ArchivoBytes:
         if str(id_archivo) not in _STUB_TEXTOS:
@@ -361,13 +205,15 @@ class StubEvidenciasClient:
 
 def get_evidencias_client() -> EvidenciasClient:
     s = get_settings()
-    if s.evidencias_mode == "practice_db":
-        if not s.practice_database_url:
-            raise EvidenciasError("EVIDENCIAS_MODE=practice_db pero falta PRACTICE_DATABASE_URL.")
-        hosts = [h.strip() for h in s.allowed_file_hosts.split(",") if h.strip()]
-        return PracticeDbEvidenciasClient(s.practice_database_url, hosts, s.max_file_mb * 1024 * 1024)
     if s.evidencias_mode == "http":
         if not s.evidencias_api_url:
-            raise EvidenciasError("EVIDENCIAS_MODE=http pero falta EVIDENCIAS_API_URL.")
+            raise EvidenciasError("EVIDENCIAS_MODE=http pero falta configurar EVIDENCIAS_API_URL.")
         return HttpEvidenciasClient(s.evidencias_api_url, s.evidencias_api_token, s.max_file_mb * 1024 * 1024)
-    return StubEvidenciasClient()
+    if s.evidencias_mode == "stub":
+        return StubEvidenciasClient()
+
+    raise EvidenciasError(
+        f"Modo de evidencias '{s.evidencias_mode}' no soportado. "
+        "El microservicio de evaluación no puede conectarse directamente a la base de datos de prácticas; "
+        "configure EVIDENCIAS_MODE=http para consultar el monolito."
+    )
